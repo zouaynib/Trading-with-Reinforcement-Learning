@@ -2,6 +2,9 @@
 Trading Environment (OpenAI Gym-style)
 Section 1 of the RL Trading Lab
 """
+from __future__ import annotations
+
+import logging
 
 import numpy as np
 import pandas as pd
@@ -10,30 +13,34 @@ import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 
+logger = logging.getLogger(__name__)
 
-# ──────────────────────────────────────────────
-# 1.1  Download data & compute log returns
-# ──────────────────────────────────────────────
 
-def download_data(ticker: str = "AAPL", start: str = "2019-01-01", end: str = "2024-12-31") -> pd.DataFrame:
+def download_data(
+    ticker: str = "AAPL",
+    start: str = "2019-01-01",
+    end: str = "2024-12-31",
+) -> pd.DataFrame:
     """Download daily adjusted close prices and compute log returns."""
     df = yf.download(ticker, start=start, end=end, auto_adjust=True, progress=False)
     if df.empty:
-        raise RuntimeError(f"yfinance returned no data for {ticker}. Check your internet connection and try again.")
+        raise RuntimeError(
+            f"yfinance returned no data for {ticker}. "
+            "Check your internet connection and try again."
+        )
     df = df[["Close"]].rename(columns={"Close": "price"})
-    # Flatten MultiIndex columns that yfinance may return for single-ticker downloads
     if isinstance(df.columns, pd.MultiIndex):
         df.columns = df.columns.get_level_values(0)
-    df["price"] = df["price"].squeeze()   # ensure 1-D Series
+    df["price"] = df["price"].squeeze()
     df["log_return"] = np.log(df["price"] / df["price"].shift(1))
     df = df.dropna().copy()
+    logger.info(
+        "Downloaded %d trading days for %s (%s → %s)",
+        len(df), ticker, df.index[0].date(), df.index[-1].date(),
+    )
     print(f"Downloaded {len(df)} trading days for {ticker} ({df.index[0].date()} → {df.index[-1].date()})")
     return df
 
-
-# ──────────────────────────────────────────────
-# 1.2 – 1.6  TradingEnv class
-# ──────────────────────────────────────────────
 
 class TradingEnv:
     """
@@ -53,132 +60,94 @@ class TradingEnv:
     BUY  = 1
     SELL = 2
 
-    def __init__(self, prices: np.ndarray, window: int = 20, cost: float = 0.001):
-        """
-        Parameters
-        ----------
-        prices : array of daily closing prices
-        window : look-back for state features (W)
-        cost   : transaction cost as fraction of price
-        """
+    def __init__(self, prices: np.ndarray, window: int = 20, cost: float = 0.001) -> None:
         self.prices  = np.array(prices, dtype=np.float64).ravel()
         self.window  = window
         self.cost    = cost
         self.n_steps = len(prices)
 
-        # Pre-compute log returns
         self.log_returns = np.zeros(self.n_steps)
         self.log_returns[1:] = np.log(self.prices[1:] / self.prices[:-1])
 
         self.state_dim  = window + 2
         self.action_dim = 3
 
-        self.t          = None   # current time index
-        self.position   = None   # qt ∈ {-1, 0, +1}
-        self.entry_price = None  # price when position was opened
-
-    # ── helpers ──────────────────────────────
+        self.t           = None
+        self.position    = None
+        self.entry_price = None
 
     def _zscore_returns(self, t: int) -> np.ndarray:
-        """Z-score the W most recent log returns using a rolling window."""
         window_returns = self.log_returns[t - self.window + 1: t + 1]
         mu  = window_returns.mean()
         std = window_returns.std() + 1e-8
         return (window_returns - mu) / std
 
     def _unrealized_pnl(self) -> float:
-        """Normalized unrealized PnL."""
         if self.position == 0 or self.entry_price is None:
             return 0.0
         pnl = self.position * (self.prices[self.t] - self.entry_price)
-        return pnl / self.prices[self.t]   # normalize by current price
+        return pnl / self.prices[self.t]
 
     def _build_state(self) -> np.ndarray:
         z = self._zscore_returns(self.t)
         return np.append(z, [float(self.position), self._unrealized_pnl()])
 
-    # ── public interface ──────────────────────
-
     def reset(self) -> np.ndarray:
         """Reset environment to start. Returns initial state."""
-        self.t            = self.window - 1   # first usable index
-        self.position     = 0
-        self.entry_price  = None
+        self.t           = self.window - 1
+        self.position    = 0
+        self.entry_price = None
         return self._build_state()
 
-    def step(self, action: int):
-        """
-        Execute action and advance one time step.
-
-        Returns
-        -------
-        next_state : np.ndarray
-        reward     : float
-        done       : bool
-        info       : dict
-        """
+    def step(self, action: int) -> tuple[np.ndarray, float, bool, dict]:
+        """Execute action, advance one time step. Returns (next_state, reward, done, info)."""
         assert action in (0, 1, 2), f"Invalid action {action}"
 
         prev_position = self.position
         p_now         = self.prices[self.t]
 
-        # ── position transition ──
         if self.position == 0:
             if action == self.BUY:
-                self.position  = +1
+                self.position    = +1
                 self.entry_price = p_now
             elif action == self.SELL:
-                self.position  = -1
+                self.position    = -1
                 self.entry_price = p_now
-            # else HOLD → no change
-
         elif self.position == +1:
             if action == self.SELL:
-                self.position  = 0
+                self.position    = 0
                 self.entry_price = None
-            # BUY / HOLD while long → keep
-
         elif self.position == -1:
             if action == self.BUY:
-                self.position  = 0
+                self.position    = 0
                 self.entry_price = None
-            # SELL / HOLD while short → keep
 
-        # ── reward ──
-        if self.t + 1 < self.n_steps:
-            p_next = self.prices[self.t + 1]
-        else:
-            p_next = p_now
+        p_next = self.prices[self.t + 1] if self.t + 1 < self.n_steps else p_now
 
         transaction_cost = self.cost * p_now if (self.position != prev_position) else 0.0
         reward = prev_position * (p_next - p_now) - transaction_cost
 
-        # ── advance time ──
         self.t += 1
         done = self.t >= self.n_steps - 1
 
         next_state = self._build_state() if not done else np.zeros(self.state_dim)
 
         info = {
-            "position"       : self.position,
-            "price"          : p_now,
-            "reward"         : reward,
+            "position":        self.position,
+            "price":           p_now,
+            "reward":          reward,
             "transaction_cost": transaction_cost,
         }
         return next_state, reward, done, info
 
 
-# ──────────────────────────────────────────────
-# 1.6  Test: 100 random episodes, plot one
-# ──────────────────────────────────────────────
-
-def run_random_episodes(env: TradingEnv, n_episodes: int = 100):
+def run_random_episodes(env: TradingEnv, n_episodes: int = 100) -> list[float]:
     """Run n_episodes with random actions; return per-episode total rewards."""
     episode_rewards = []
     for _ in range(n_episodes):
-        state = env.reset()
+        state        = env.reset()
         total_reward = 0.0
-        done = False
+        done         = False
         while not done:
             action = np.random.randint(0, 3)
             state, reward, done, _ = env.step(action)
@@ -187,7 +156,7 @@ def run_random_episodes(env: TradingEnv, n_episodes: int = 100):
     return episode_rewards
 
 
-def plot_episode(env: TradingEnv, title: str = "Random-policy episode"):
+def plot_episode(env: TradingEnv, title: str = "Random-policy episode") -> None:
     """Run one episode with random actions and plot price, position, cumulated PnL."""
     state = env.reset()
     prices, positions, cum_pnl = [], [], []
@@ -222,18 +191,18 @@ def plot_episode(env: TradingEnv, title: str = "Random-policy episode"):
 
     plt.tight_layout()
     plt.savefig("random_episode.png", dpi=150)
+    logger.info("Plot saved → random_episode.png")
     print("Plot saved → random_episode.png")
 
 
 if __name__ == "__main__":
-    # Download data
+    logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s: %(message)s")
+
     df = download_data("AAPL", "2019-01-01", "2024-12-31")
     prices = df["price"].values
 
-    # Build environment
     env = TradingEnv(prices, window=20, cost=0.001)
 
-    # 100 random episodes
     rewards = run_random_episodes(env, n_episodes=100)
     print(f"\n100 random episodes — reward stats:")
     print(f"  mean  : {np.mean(rewards):.2f}")
@@ -241,5 +210,4 @@ if __name__ == "__main__":
     print(f"  min   : {np.min(rewards):.2f}")
     print(f"  max   : {np.max(rewards):.2f}")
 
-    # Plot one episode
     plot_episode(env, title="Random-policy episode — AAPL")

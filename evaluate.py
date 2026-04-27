@@ -1,3 +1,7 @@
+from __future__ import annotations
+
+import logging
+
 import numpy as np
 import matplotlib
 matplotlib.use("Agg")
@@ -7,12 +11,18 @@ import torch
 from trading_env import TradingEnv
 from agent import DQNAgent
 
+logger = logging.getLogger(__name__)
+
 
 def buy_and_hold(prices: np.ndarray) -> np.ndarray:
     return np.cumsum(np.diff(prices))
 
 
-def compute_metrics(cum_pnl: np.ndarray, n_trades: int, label: str = ""):
+def compute_metrics(
+    cum_pnl: np.ndarray,
+    n_trades: int,
+    label: str = "",
+) -> dict[str, float]:
     total_return = cum_pnl[-1]
     daily_pnl    = np.diff(np.insert(cum_pnl, 0, 0.0))
     sharpe       = (daily_pnl.mean() / (daily_pnl.std() + 1e-8)) * np.sqrt(252)
@@ -26,11 +36,20 @@ def compute_metrics(cum_pnl: np.ndarray, n_trades: int, label: str = ""):
     print(f"  Max drawdown : ${mdd:>9.2f}")
     print(f"  # Trades     : {n_trades:>10d}")
 
+    logger.info(
+        "%s | return=$%.2f | sharpe=%.3f | mdd=$%.2f | trades=%d",
+        label, total_return, sharpe, mdd, n_trades,
+    )
     return dict(total_return=total_return, sharpe=sharpe, mdd=mdd, n_trades=n_trades)
 
 
-def run_greedy(agent: DQNAgent, prices: np.ndarray, window: int = 20, cost: float = 0.001):
-    """Run the agent with epsilon=0 on prices. Returns cumulated PnL, positions, Q-values."""
+def run_greedy(
+    agent: DQNAgent,
+    prices: np.ndarray,
+    window: int = 20,
+    cost: float = 0.001,
+) -> tuple[np.ndarray, np.ndarray, np.ndarray, int]:
+    """Run the agent with epsilon=0 on prices. Returns (cum_pnl, positions, q_hist, n_trades)."""
     env   = TradingEnv(prices, window=window, cost=cost)
     state = env.reset()
 
@@ -45,12 +64,12 @@ def run_greedy(agent: DQNAgent, prices: np.ndarray, window: int = 20, cost: floa
             action = int(np.argmax(q_vals))
             q_hist.append(q_vals.copy())
 
-            prev_pos                  = env.position  # q_t: position held during [t, t+1]
+            prev_pos                  = env.position
             state, reward, done, info = env.step(action)
 
             total += reward
             cum_pnl.append(total)
-            positions.append(prev_pos)              # record q_t, not q_{t+1}
+            positions.append(prev_pos)
             if env.position != prev_pos:
                 n_trades += 1
 
@@ -58,7 +77,12 @@ def run_greedy(agent: DQNAgent, prices: np.ndarray, window: int = 20, cost: floa
     return np.array(cum_pnl), np.array(positions), np.array(q_hist), n_trades
 
 
-def plot_comparison(test_prices, dqn_pnl, ql_pnl=None, fname="dqn_eval.png"):
+def plot_comparison(
+    test_prices: np.ndarray,
+    dqn_pnl: np.ndarray,
+    ql_pnl: np.ndarray | None = None,
+    fname: str = "dqn_eval.png",
+) -> None:
     bnh = buy_and_hold(test_prices)
     n   = min(len(dqn_pnl), len(bnh))
 
@@ -74,6 +98,7 @@ def plot_comparison(test_prices, dqn_pnl, ql_pnl=None, fname="dqn_eval.png"):
     ax.legend()
     plt.tight_layout()
     plt.savefig(fname, dpi=150)
+    logger.info("Saved → %s", fname)
     print(f"Saved → {fname}")
     plt.close()
 
@@ -83,34 +108,30 @@ if __name__ == "__main__":
     from train import train
     from q_learning import split_data, download_data, train_q_learning, evaluate_policy
 
+    logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s: %(message)s")
     torch.manual_seed(42)
     np.random.seed(42)
     random.seed(42)
 
-    # Data — BTC-USD, 70/30 split as per assignment
     df     = download_data("BTC-USD", "2019-01-01", "2024-12-31")
     prices = df["price"].values
     train_prices, test_prices = split_data(prices)
-    # Use last 15% of train as validation for early stopping
     val_split    = int(len(train_prices) * 0.85)
     val_prices   = train_prices[val_split:]
     train_prices = train_prices[:val_split]
     print(f"Train: {len(train_prices)} | Val: {len(val_prices)} | Test: {len(test_prices)}\n")
 
-    # Train DQN
     print("Training DQN…")
     agent, _, _ = train(train_prices, val_prices, n_episodes=500)
 
     dqn_pnl, _, _, n_trades = run_greedy(agent, test_prices)
     compute_metrics(dqn_pnl, n_trades, label="DQN")
 
-    # Q-learning uses full 70% train set (no val split needed — tabular, no overfitting)
     full_train, _ = split_data(prices)
     print("\nTraining Q-learning…")
     Q, _ = train_q_learning(full_train, n_episodes=500, verbose=False)
     _, ql_pnl = evaluate_policy(test_prices, Q, label="Q-learning")
 
-    # Buy & Hold
     bnh_pnl   = buy_and_hold(test_prices)
     bnh_daily = np.diff(np.insert(bnh_pnl, 0, 0.0))
     bnh_sharpe = (bnh_daily.mean() / (bnh_daily.std() + 1e-8)) * np.sqrt(252)

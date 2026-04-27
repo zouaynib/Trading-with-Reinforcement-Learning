@@ -1,38 +1,43 @@
+from __future__ import annotations
+
+import copy
+import logging
+import random
+
 import numpy as np
 import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import torch
-import random
 
 from trading_env import download_data, TradingEnv
 from q_learning import split_data
 from agent import DQNAgent
 from evaluate import run_greedy, buy_and_hold, compute_metrics
 
+logger = logging.getLogger(__name__)
+
 
 def train_shaped(
-    train_prices: np.ndarray,
-    val_prices:   np.ndarray,
+    train_prices:  np.ndarray,
+    val_prices:    np.ndarray,
     reward_lambda: float,
-    n_episodes:   int   = 500,
-    window:       int   = 20,
-    cost:         float = 0.001,
-    eps_decay_eps:int   = 300,
-    patience:     int   = 50,
-    val_every:    int   = 10,
-) -> tuple:
+    n_episodes:    int   = 500,
+    window:        int   = 20,
+    cost:          float = 0.001,
+    eps_decay_eps: int   = 300,
+    patience:      int   = 50,
+    val_every:     int   = 10,
+) -> tuple[DQNAgent, list[float]]:
     """Train DQN with risk-adjusted reward: standard reward - λ * q_t²"""
-    import copy
-
     env   = TradingEnv(train_prices, window=window, cost=cost)
     agent = DQNAgent(state_dim=env.state_dim)
 
     best_val_reward     = -np.inf
     best_weights        = None
     episodes_no_improve = 0
-    episode_rewards     = []
-    val_rewards         = []
+    episode_rewards:    list[float] = []
+    val_rewards:        list[tuple[int, float]] = []
 
     for ep in range(n_episodes):
         frac    = min(ep / max(eps_decay_eps - 1, 1), 1.0)
@@ -43,10 +48,9 @@ def train_shaped(
         done    = False
 
         while not done:
-            action                       = agent.select_action(state, epsilon)
-            next_state, reward, done, _  = env.step(action)
+            action                      = agent.select_action(state, epsilon)
+            next_state, reward, done, _ = env.step(action)
 
-            # Risk-adjusted reward: penalise holding any position
             shaped = reward - reward_lambda * (env.position ** 2)
 
             agent.push(state, action, shaped, next_state, done)
@@ -68,6 +72,7 @@ def train_shaped(
                 episodes_no_improve += val_every
 
             if episodes_no_improve >= patience:
+                logger.info("λ=%.4f early stopping at episode %d", reward_lambda, ep + 1)
                 break
 
     if best_weights is not None:
@@ -93,14 +98,22 @@ def _val_reward(agent: DQNAgent, prices: np.ndarray, window: int, cost: float) -
     return total
 
 
-def run_reward_shaping(train_prices, val_prices, test_prices):
-    lambdas = [0.0001, 0.001, 0.01]
-    results = {}
+def run_reward_shaping(
+    train_prices: np.ndarray,
+    val_prices: np.ndarray,
+    test_prices: np.ndarray,
+    lambdas: list[float] | None = None,
+) -> dict[float, tuple[dict, np.ndarray]]:
+    if lambdas is None:
+        lambdas = [0.0001, 0.001, 0.01]
+
+    results: dict[float, tuple[dict, np.ndarray]] = {}
 
     print(f"\n{'λ':>10s} | {'Return($)':>10s} | {'Sharpe':>8s} | {'MDD($)':>10s} | {'# Trades':>9s}")
     print("─" * 57)
 
     for lam in lambdas:
+        logger.info("Training shaped agent λ=%.4f", lam)
         agent, _ = train_shaped(train_prices, val_prices, reward_lambda=lam)
         pnl, _, _, n_trades = run_greedy(agent, test_prices)
         metrics = compute_metrics(pnl, n_trades, label=f"λ={lam}")
@@ -111,7 +124,11 @@ def run_reward_shaping(train_prices, val_prices, test_prices):
     return results
 
 
-def plot_shaped(test_prices, results, fname="dqn_reward_shaping.png"):
+def plot_shaped(
+    test_prices: np.ndarray,
+    results: dict[float, tuple[dict, np.ndarray]],
+    fname: str = "dqn_reward_shaping.png",
+) -> None:
     bnh = buy_and_hold(test_prices)
     n   = len(bnh)
 
@@ -127,11 +144,13 @@ def plot_shaped(test_prices, results, fname="dqn_reward_shaping.png"):
     ax.legend()
     plt.tight_layout()
     plt.savefig(fname, dpi=150)
+    logger.info("Saved → %s", fname)
     print(f"\nSaved → {fname}")
     plt.close()
 
 
 if __name__ == "__main__":
+    logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s: %(message)s")
     torch.manual_seed(42)
     np.random.seed(42)
     random.seed(42)

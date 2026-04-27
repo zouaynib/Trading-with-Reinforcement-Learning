@@ -1,7 +1,10 @@
+from __future__ import annotations
+
+import random
+from collections import deque
+
 import numpy as np
 import torch
-from collections import deque
-import random
 
 
 class ReplayBuffer:
@@ -10,13 +13,20 @@ class ReplayBuffer:
     Randomly samples mini-batches to break temporal correlations during training.
     """
 
-    def __init__(self, capacity: int = 10_000):
-        self.buffer = deque(maxlen=capacity)  # old entries auto-dropped when full
+    def __init__(self, capacity: int = 10_000) -> None:
+        self.buffer: deque = deque(maxlen=capacity)
 
-    def push(self, state, action, reward, next_state, done):
+    def push(
+        self,
+        state: np.ndarray,
+        action: int,
+        reward: float,
+        next_state: np.ndarray,
+        done: float,
+    ) -> None:
         self.buffer.append((state, action, reward, next_state, done))
 
-    def sample(self, batch_size: int):
+    def sample(self, batch_size: int) -> tuple[torch.Tensor, ...]:
         batch = random.sample(self.buffer, batch_size)
         states, actions, rewards, next_states, dones = zip(*batch)
         return (
@@ -27,14 +37,13 @@ class ReplayBuffer:
             torch.FloatTensor(dones),
         )
 
-    def __len__(self):
+    def __len__(self) -> int:
         return len(self.buffer)
 
 
 if __name__ == "__main__":
     buf = ReplayBuffer(capacity=100)
 
-    # Push 50 fake transitions
     for i in range(50):
         state      = np.random.randn(22).astype(np.float32)
         next_state = np.random.randn(22).astype(np.float32)
@@ -42,7 +51,6 @@ if __name__ == "__main__":
 
     print("Buffer size:", len(buf))
 
-    # Sample a mini-batch
     states, actions, rewards, next_states, dones = buf.sample(batch_size=8)
     print("states shape    :", states.shape)
     print("actions shape   :", actions.shape)
