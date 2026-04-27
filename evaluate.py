@@ -101,7 +101,6 @@ if __name__ == "__main__":
     print("Training DQN…")
     agent, _, _ = train(train_prices, val_prices, n_episodes=500)
 
-    # Evaluate DQN
     dqn_pnl, _, _, n_trades = run_greedy(agent, test_prices)
     compute_metrics(dqn_pnl, n_trades, label="DQN")
 
