@@ -47,9 +47,13 @@ def discretize_state(prices: np.ndarray, t: int, position: int) -> int:
 # 2.3  Train / test split (chronological 70/30)
 # ──────────────────────────────────────────────
 
-def split_data(prices: np.ndarray, train_ratio: float = 0.70):
-    split = int(len(prices) * train_ratio)
-    return prices[:split], prices[split:]
+def split_data(prices: np.ndarray, train_ratio: float = 0.60,
+               val_ratio: float = 0.20):
+    """Chronological train / val / test split. test = remaining data."""
+    n     = len(prices)
+    t_end = int(n * train_ratio)
+    v_end = int(n * (train_ratio + val_ratio))
+    return prices[:t_end], prices[t_end:v_end], prices[v_end:]
 
 
 # ──────────────────────────────────────────────
