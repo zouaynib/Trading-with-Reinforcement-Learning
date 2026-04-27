@@ -39,7 +39,7 @@ def train(
     eps_start:     float = 1.0,
     eps_end:       float = 0.01,
     eps_decay_eps: int   = 300,
-    patience:      int   = 50,    # stop if val doesn't improve for this many episodes
+    patience:      int   = 50,
     val_every:     int   = 10,    # evaluate on val set every N episodes
 ) -> tuple:
     env   = TradingEnv(train_prices, window=window, cost=cost)
