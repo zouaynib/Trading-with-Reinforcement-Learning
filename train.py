@@ -136,9 +136,12 @@ if __name__ == "__main__":
     np.random.seed(42)
     random.seed(42)
 
-    df     = download_data("AAPL", "2019-01-01", "2024-12-31")
+    df     = download_data("BTC-USD", "2019-01-01", "2024-12-31")
     prices = df["price"].values
-    train_prices, val_prices, _ = split_data(prices)
+    train_prices, test_prices = split_data(prices)
+    # Use last 15% of train as validation for early stopping
+    val_split   = int(len(train_prices) * 0.85)
+    train_prices, val_prices = train_prices[:val_split], train_prices[val_split:]
     print(f"Train: {len(train_prices)} days | Val: {len(val_prices)} days\n")
 
     agent, train_rewards, val_rewards = train(train_prices, val_prices, n_episodes=500)
