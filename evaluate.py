@@ -87,10 +87,14 @@ if __name__ == "__main__":
     np.random.seed(42)
     random.seed(42)
 
-    # Data
-    df     = download_data("AAPL", "2019-01-01", "2024-12-31")
+    # Data — BTC-USD, 70/30 split as per assignment
+    df     = download_data("BTC-USD", "2019-01-01", "2024-12-31")
     prices = df["price"].values
-    train_prices, val_prices, test_prices = split_data(prices)
+    train_prices, test_prices = split_data(prices)
+    # Use last 15% of train as validation for early stopping
+    val_split    = int(len(train_prices) * 0.85)
+    val_prices   = train_prices[val_split:]
+    train_prices = train_prices[:val_split]
     print(f"Train: {len(train_prices)} | Val: {len(val_prices)} | Test: {len(test_prices)}\n")
 
     # Train DQN
@@ -101,11 +105,11 @@ if __name__ == "__main__":
     dqn_pnl, _, _, n_trades = run_greedy(agent, test_prices)
     compute_metrics(dqn_pnl, n_trades, label="DQN")
 
-    # Train & evaluate Q-learning (uses same train split, evaluated on test)
+    # Q-learning uses full 70% train set (no val split needed — tabular, no overfitting)
+    full_train, _ = split_data(prices)
     print("\nTraining Q-learning…")
-    Q, _ = train_q_learning(train_prices, n_episodes=500, verbose=False)
+    Q, _ = train_q_learning(full_train, n_episodes=500, verbose=False)
     _, ql_pnl = evaluate_policy(test_prices, Q, label="Q-learning")
-
 
     # Buy & Hold
     bnh_pnl   = buy_and_hold(test_prices)
