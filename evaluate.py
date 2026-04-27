@@ -45,13 +45,13 @@ def run_greedy(agent: DQNAgent, prices: np.ndarray, window: int = 20, cost: floa
             action = int(np.argmax(q_vals))
             q_hist.append(q_vals.copy())
 
-            prev_pos            = env.position
+            prev_pos                  = env.position  # q_t: position held during [t, t+1]
             state, reward, done, info = env.step(action)
 
             total += reward
             cum_pnl.append(total)
-            positions.append(info["position"])
-            if info["position"] != prev_pos:
+            positions.append(prev_pos)              # record q_t, not q_{t+1}
+            if env.position != prev_pos:
                 n_trades += 1
 
     agent.q_net.train()

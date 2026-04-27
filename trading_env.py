@@ -6,6 +6,8 @@ Section 1 of the RL Trading Lab
 import numpy as np
 import pandas as pd
 import yfinance as yf
+import matplotlib
+matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 
 
@@ -16,7 +18,13 @@ import matplotlib.pyplot as plt
 def download_data(ticker: str = "AAPL", start: str = "2019-01-01", end: str = "2024-12-31") -> pd.DataFrame:
     """Download daily adjusted close prices and compute log returns."""
     df = yf.download(ticker, start=start, end=end, auto_adjust=True, progress=False)
+    if df.empty:
+        raise RuntimeError(f"yfinance returned no data for {ticker}. Check your internet connection and try again.")
     df = df[["Close"]].rename(columns={"Close": "price"})
+    # Flatten MultiIndex columns that yfinance may return for single-ticker downloads
+    if isinstance(df.columns, pd.MultiIndex):
+        df.columns = df.columns.get_level_values(0)
+    df["price"] = df["price"].squeeze()   # ensure 1-D Series
     df["log_return"] = np.log(df["price"] / df["price"].shift(1))
     df = df.dropna().copy()
     print(f"Downloaded {len(df)} trading days for {ticker} ({df.index[0].date()} → {df.index[-1].date()})")
@@ -214,7 +222,6 @@ def plot_episode(env: TradingEnv, title: str = "Random-policy episode"):
 
     plt.tight_layout()
     plt.savefig("random_episode.png", dpi=150)
-    plt.show()
     print("Plot saved → random_episode.png")
 
 
