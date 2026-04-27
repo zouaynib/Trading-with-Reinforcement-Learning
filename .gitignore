@@ -29,6 +29,10 @@ htmlcov/
 .DS_Store
 Thumbs.db
 
+# Project-specific
+anaconda_projects/
+*.pdf
+
 # IDE
 .vscode/
 .idea/

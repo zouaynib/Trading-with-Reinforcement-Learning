@@ -4,9 +4,6 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
-import sys, os
-sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
-
 from trading_env import TradingEnv
 
 

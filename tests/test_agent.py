@@ -5,9 +5,6 @@ import numpy as np
 import pytest
 import torch
 
-import sys, os
-sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
-
 from agent import DQNAgent
 
 

@@ -218,3 +218,13 @@ Project_AI_Finance/
 **Why early stopping on a validation split?** The 70% training window is further split 85/15 — last 15% used as a held-out validation set to stop before overfitting. Weights from the best validation checkpoint are restored before evaluation.
 
 **Why λ=0.01 for reward shaping?** Smaller λ values barely change behavior (cost too small to matter vs price moves). λ=0.01 is the first value that meaningfully changes the optimal policy — forcing the agent to earn its trades.
+
+---
+
+## Known Limitations
+
+**Test-set leakage via hyperparameter selection.** The λ value (0.01) was chosen by observing test-set performance across three candidates. This constitutes look-ahead bias: the reported Sharpe of 1.41 is optimistic because the "best" λ was selected post-hoc on the same data used to evaluate it. A credible study would either (a) use a held-out final test set that is never seen during hyperparameter search, or (b) apply time-series cross-validation (expanding or rolling window) to estimate out-of-sample performance across multiple folds.
+
+**Single-seed results.** All reported numbers come from one random seed (42). RL training is highly sensitive to initialization — results can vary substantially across seeds. A more rigorous evaluation would report mean ± std across at least 5 seeds.
+
+**No walk-forward validation.** The single 70/30 chronological split cannot distinguish a genuinely predictive policy from one that happened to fit the specific 2022–2024 BTC regime. Rolling-window retraining would provide a more honest picture of whether the learned strategy generalizes across market conditions.

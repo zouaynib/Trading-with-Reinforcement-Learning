@@ -1,0 +1,10 @@
+numpy>=1.24
+pandas>=2.0
+torch>=2.0
+yfinance>=0.2
+matplotlib>=3.7
+scipy>=1.11
+
+# Dev / testing
+pytest>=7.4
+pytest-cov>=4.1
