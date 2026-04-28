@@ -1,0 +1,6 @@
+# Treat generated image/video artifacts as binary (no diff, no merge conflicts)
+*.png  binary
+*.gif  binary
+*.jpg  binary
+*.jpeg binary
+*.pdf  binary
