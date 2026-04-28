@@ -23,6 +23,14 @@ dev = ["pytest>=7.4", "pytest-cov>=4.1"]
 testpaths = ["tests"]
 addopts   = "-v --tb=short"
 
+[tool.coverage.run]
+omit = [
+    "train.py",
+    "evaluate.py",
+    "analysis.py",
+    "reward_shaping.py",
+]
+
 [tool.setuptools.packages.find]
 where   = ["."]
 exclude = ["tests*", "anaconda_projects*"]
